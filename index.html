@@ -1,0 +1,1071 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>CraftNetWork – Demo (Realtime + Vermietung)</title>
+
+<!-- Leaflet (Karte) -->
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script defer src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+<!-- Firebase compat (ohne Build-Tool) -->
+<script defer src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+<script defer src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js"></script>
+
+<style>
+  :root{
+    --brand:#F07A21; --brand-dark:#d46418;
+    --text:#222; --muted:#666;
+    --card:rgba(255,255,255,.72); --card-strong:rgba(255,255,255,.9);
+    --radius:22px; --shadow:0 8px 22px rgba(0,0,0,.22);
+    --danger:#c62828; --ok:#2e7d32;
+    --body, button, input, select, textarea {
+  font-family: system-ui, -apple-system, "Segoe UI Emoji", "Noto Color Emoji", "Twemoji Mozilla", "Apple Color Emoji", sans-serif;
+}
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,Inter,Arial,sans-serif;color:var(--text);overflow-x:hidden;background:#f7f7f7}
+
+  /* Hintergrund Slideshow */
+  #bg{position:fixed;inset:0;z-index:-2;overflow:hidden}
+  #bg img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;filter:grayscale(100%) brightness(1.05);opacity:0;transition:opacity 1s ease}
+  #bg img.active{opacity:.18}
+  .bg-hint{position:fixed;right:10px;bottom:70px;z-index:5;display:none;gap:.5rem;align-items:center;background:rgba(255,255,255,.92);border:1px solid #eee;border-radius:999px;padding:.55rem .9rem;box-shadow:var(--shadow);font-size:.9rem;color:#333}
+  .bg-hint button{border:0;background:var(--brand);color:#fff;padding:.45rem .8rem;border-radius:999px;font-weight:700}
+  #bgPicker{display:none}
+
+  /* Topbar: Burger & Glocke */
+  .topbar{position:fixed;left:14px;right:14px;top:12px;display:flex;justify-content:space-between;align-items:center;z-index:20}
+  .roundbtn{border:0;border-radius:12px;padding:10px 12px;background:rgba(255,255,255,.95);box-shadow:var(--shadow);cursor:pointer;font-weight:800}
+  .notif{position:relative}
+  .notif .dot{position:absolute;top:-2px;right:-2px;background:#e53935;color:#fff;border-radius:999px;padding:2px 6px;font-size:.72rem;display:none}
+  .notif.open .panel{display:block}
+  .notif .panel{position:absolute;right:0;top:48px;background:#fff;border-radius:12px;box-shadow:0 18px 40px rgba(0,0,0,.25);padding:10px;min-width:260px;display:none}
+  .notif .panel h4{margin:.2rem 0 .4rem}
+  .notif .item{font-size:.9rem;border-bottom:1px solid #eee;padding:6px 2px}
+  .notif .item:last-child{border-bottom:0}
+
+  /* Drawer (Burger-Menü) */
+  .drawer{position:fixed;left:12px;top:64px;width:264px;background:#fff;border-radius:16px;box-shadow:0 18px 40px rgba(0,0,0,.25);padding:10px;display:none;z-index:30}
+  .drawer a{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:12px;color:#222;text-decoration:none}
+  .drawer a:hover{background:#f3f3f3}
+
+  /* Header (Logo) + Abstände (ÄNDERUNG 2) */
+  header{max-width:980px;margin:110px auto 12px;padding:0 14px}
+  .hero{background:var(--card);border-radius:28px;box-shadow:var(--shadow);padding:20px 18px;text-align:center}
+  .brand-wrap{display:inline-flex;align-items:center;gap:18px;justify-content:center}
+  .brand-logo{width:120px;height:120px;border-radius:18px;background:var(--card-strong);display:grid;place-items:center;box-shadow:0 3px 10px rgba(0,0,0,.15);overflow:hidden}
+  .brand-logo img{max-width:100%;max-height:100%;display:block;opacity:.86}
+  .brand-title h1{margin:0;font-size:2.2rem;line-height:1.1;color:var(--brand);font-weight:800}
+  .slogan{margin:6px 0 4px;font-weight:700;color:var(--brand)}
+  .sub{margin:0;color:#444}
+
+  /* Main / Grid / Buttons */
+  main{max-width:980px;margin:0 auto;padding:0 14px 92px}
+  h2{color:var(--brand);margin:16px 0 8px}
+  .grid{display:grid;grid-template-columns:1fr;gap:16px;margin:40px auto 8px} /* mehr Abstand Header→Buttons */
+  @media(min-width:680px){.grid{grid-template-columns:1fr 1fr}}
+  .tile{background:var(--brand);color:#fff;border-radius:24px;padding:18px 16px;font-weight:500;text-align:center;box-shadow:var(--shadow);cursor:pointer;display:flex;align-items:center;justify-content:center;gap:10px} /* dünnere Schrift (ÄNDERUNG 1) */
+  .tile .emoji{font-size:1.15rem}
+
+  /* Cards / Inputs / Buttons */
+  .card{background:var(--card);border-radius:18px;box-shadow:var(--shadow);padding:14px;margin:20px 0} /* mehr Abstand Buttons→Status */
+  .row{display:grid;grid-template-columns:1fr;gap:10px}
+  @media(min-width:560px){.row2{grid-template-columns:1fr 1fr}}
+  @media(min-width:860px){.row3{grid-template-columns:1fr 1fr 1fr}}
+  input,select,textarea{width:100%;border:1px solid #dcdcdc;border-radius:14px;padding:12px;background:#fff;font-size:16px}
+  textarea{min-height:110px}
+  .actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:6px}
+  .btn{border:0;border-radius:14px;padding:10px 14px;cursor:pointer;font-weight:700}
+  .btn.pri{background:var(--brand);color:#fff}
+  .btn.sec{background:#eee}
+  .btn.dan{background:var(--danger);color:#fff}
+  .btn.ok{background:var(--ok);color:#fff}
+  .star{cursor:pointer;font-size:1.1rem}
+
+  /* Zurück-Button (ÄNDERUNG 3) */
+  .back-btn{display:inline-block;margin-bottom:8px;background:#eee;border-radius:10px;padding:6px 12px;cursor:pointer;font-weight:600;color:#333}
+
+  /* Tabs unten */
+  nav.tabs{position:fixed;left:0;right:0;bottom:0;display:flex;background:#fff;border-top:1px solid #ddd;z-index:10}
+  nav.tabs button{flex:1;padding:12px 6px;font-weight:800;color:#666;background:none;border:0}
+  nav.tabs button.active{color:var(--brand)}
+
+  /* Modal / Overlay */
+  .overlay{position:fixed;inset:0;background:rgba(0,0,0,.5);display:none;align-items:center;justify-content:center;padding:16px;z-index:50}
+  .sheet{background:#fff;border-radius:18px;padding:16px;max-width:760px;max-height:85vh;overflow:auto;box-shadow:var(--shadow)}
+  .hidden{display:none !important}
+
+  /* Login */
+  .login-wrap{max-width:460px;margin:100px auto 28px;padding:0 14px}
+  .login-card{background:var(--card);border-radius:18px;box-shadow:var(--shadow);padding:18px}
+  .login-card .stack > *{margin:.4rem 0}
+
+  /* Chat Popup + Toasts */
+  .chat-pop{position:fixed;right:14px;bottom:92px;width:360px;max-width:92vw;background:#fff;border-radius:16px;box-shadow:0 18px 40px rgba(0,0,0,.25);display:none;flex-direction:column;overflow:hidden;z-index:40}
+  .chat-head{display:flex;align-items:center;justify-content:space-between;background:var(--brand);color:#fff;padding:10px 12px}
+  .chat-body{height:320px;overflow:auto;padding:10px;background:#fafafa}
+  .chat-msg{margin:6px 0;padding:8px 10px;border-radius:12px;background:#fff;box-shadow:0 2px 6px rgba(0,0,0,.07)}
+  .chat-msg.self{background:#ffe6d1}
+  .chat-foot{display:flex;gap:6px;padding:10px;background:#fff;border-top:1px solid #eee}
+  .chat-foot input{flex:1}
+  .toasts{position:fixed;right:14px;top:14px;z-index:60;display:flex;flex-direction:column;gap:8px}
+  .toast{background:rgba(34,34,34,.95);color:#fff;border-left:5px solid var(--brand);border-radius:10px;box-shadow:var(--shadow);padding:10px 12px;min-width:240px}
+
+  /* Map */
+  #mapWrap{margin:12px 0}
+  #map{height:380px;border-radius:16px;box-shadow:var(--shadow)}
+</style>
+</head>
+<body>
+
+<!-- Hintergrund -->
+<div id="bg"></div>
+<div class="bg-hint" id="bgHint">📷 Hintergründe <button id="pickBtn">auswählen</button></div>
+<input id="bgPicker" type="file" accept="image/*" multiple />
+
+<!-- Topbar -->
+<div class="topbar hidden" id="topbar">
+  <button class="roundbtn" id="burgerBtn">☰</button>
+  <div class="notif" id="notifBox">
+    <button class="roundbtn" id="bellBtn">🔔</button>
+    <span class="dot" id="bellDot">0</span>
+    <div class="panel" id="notifPanel">
+      <h4>Benachrichtigungen</h4>
+      <div id="notifList"></div>
+    </div>
+  </div>
+</div>
+<nav class="drawer" id="drawer">
+  <a href="javascript:go('home')">🏠 Start</a>
+  <a href="javascript:go('offerJob')">🧱 Objekt anbieten</a>
+  <a href="javascript:go('offerStaff')">👷 Mitarbeiter anbieten</a>
+  <a href="javascript:go('rentOffer')">🧰 Ich vermiete</a>
+  <a href="javascript:go('rentals')">🏗 Mietangebote</a>
+  <a href="javascript:go('jobs')">📦 Objekte</a>
+  <a href="javascript:go('staff')">👥 Mitarbeiter</a>
+  <a href="javascript:go('mapView')">🗺️ Karte</a>
+  <a href="javascript:go('favorites')">⭐ Merkliste</a>
+  <a href="javascript:go('profile')">👤 Profil</a>
+  <a href="javascript:go('profileEdit')">🛠️ Profil bearbeiten</a>
+  <hr>
+  <a href="javascript:openLegal('impressum')">ℹ️ Impressum</a>
+  <a href="javascript:openLegal('datenschutz')">🔐 Datenschutz</a>
+  <a href="javascript:openLegal('agb')">📄 AGB</a>
+  <a href="javascript:logout()">🚪 Abmelden</a>
+</nav>
+
+<!-- LOGIN -->
+<section id="login" class="login-wrap">
+  <div class="login-card">
+    <h2 style="margin:0 0 10px;color:var(--brand)">Anmeldung</h2>
+    <div class="stack">
+      <input id="li-user" placeholder="Benutzername oder E-Mail">
+      <input id="li-pass" type="password" placeholder="Passwort">
+      <input id="li-ust"  placeholder="USt-IdNr. (z. B. DE987654321)">
+    </div>
+    <div class="actions" style="margin-top:10px">
+      <button class="btn pri" onclick="doLogin()">Einloggen</button>
+    </div>
+  </div>
+</section>
+
+<!-- HEADER -->
+<header id="siteHeader" class="hidden">
+  <div class="hero">
+    <div class="brand-wrap">
+      <div class="brand-logo"><img src="logocnw.png" alt="CraftNetWork" onerror="this.style.display='none'"></div>
+      <div class="brand-title">
+        <h1>CraftNetWork</h1>
+        <div class="slogan">🤝 Handwerker unter sich 🤝</div>
+        <p class="sub">Finde freie Mitarbeiter oder passende Aufträge in deiner Region</p>
+      </div>
+    </div>
+  </div>
+</header>
+
+<!-- APP -->
+<main id="app" class="hidden">
+
+  <!-- Home -->
+  <section id="home">
+    <div class="grid">
+      <div class="tile" onclick="go('offerJob')"><span class="emoji">🏠</span>Objekt anbieten</div>
+      <div class="tile" onclick="go('offerStaff')"><span class="emoji">👷</span>Mitarbeiter anbieten</div>
+      <div class="tile" onclick="go('jobs')"><span class="emoji">🔍</span>Objekt suchen</div>
+      <div class="tile" onclick="go('staff')"><span class="emoji">👥</span>Mitarbeiter suchen</div>
+      <div class="tile" onclick="go('rentOffer')"><span class="emoji">🧰</span>Ich vermiete</div>
+      <div class="tile" onclick="go('rentals')"><span class="emoji">🏗</span>Mietangebote</div>
+    </div>
+    <div class="card">
+      <b>Status</b> ·
+      Offene Aufträge: <span id="stOpen">0</span> ·
+      Geblockte Aufträge: <span id="stBlocked">0</span> ·
+      Verfügbare Mitarbeiter: <span id="stAvail">0</span> ·
+      Gebuchte Mitarbeiter: <span id="stBooked">0</span>
+    </div>
+  </section>
+
+  <!-- Objekt anbieten -->
+  <section id="offerJob" class="hidden">
+    <div class="card">
+      <div class="back-btn" onclick="go('home')">← Zurück</div>
+      <h2>Objekt anbieten</h2>
+      <div class="row row3">
+        <input id="job-title" placeholder="Titel">
+        <select id="job-trade"></select>
+        <input id="job-zip" placeholder="PLZ/Ort">
+      </div>
+      <div class="row row3">
+        <input id="job-period" placeholder="Zeitraum (z. B. 12.–16.11.)">
+        <input id="job-size" placeholder="Größe (z. B. 120 m²)">
+        <input id="job-price" placeholder="Kosten/Preis (z. B. 2.500 €)">
+      </div>
+      <div class="row row2">
+        <select id="job-material">
+          <option>Material wird gestellt</option>
+          <option>Material selbst mitbringen</option>
+        </select>
+        <select id="job-status">
+          <option value="offen">Offen</option>
+          <option value="geblockt">Geblockt</option>
+        </select>
+      </div>
+      <textarea id="job-desc" placeholder="Kurzbeschreibung"></textarea>
+      <div class="actions">
+        <button class="btn pri" onclick="addJob()">Speichern</button>
+        <button class="btn sec" onclick="openChatPopup(null,'job')">Chat starten</button>
+        <button class="btn dan" onclick="clearJobForm()">Löschen</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- Mitarbeiter anbieten -->
+  <section id="offerStaff" class="hidden">
+    <div class="card">
+      <div class="back-btn" onclick="go('home')">← Zurück</div>
+      <h2>Mitarbeiter anbieten</h2>
+      <div class="row row3">
+        <select id="staff-trade"></select>
+        <input id="staff-count" type="number" min="1" placeholder="Anzahl">
+        <input id="staff-zip" placeholder="PLZ/Ort">
+      </div>
+      <div class="row row3">
+        <input id="staff-qual" placeholder="Qualifikation (z. B. Geselle/Meister)">
+        <input id="staff-period" placeholder="Zeitraum (z. B. KW 47)">
+        <input id="staff-rate" placeholder="Lohn/Stundensatz (z. B. 45 €/h)">
+      </div>
+      <div class="row row2">
+        <input id="staff-range" placeholder="Umkreis bis (km)">
+        <select id="staff-status">
+          <option value="verfügbar">Verfügbar</option>
+          <option value="gebucht">Gebucht</option>
+          <option value="geblockt">Geblockt</option>
+        </select>
+      </div>
+      <textarea id="staff-desc" placeholder="Details"></textarea>
+      <div class="actions">
+        <button class="btn pri" onclick="addStaff()">Speichern</button>
+        <button class="btn sec" onclick="openChatPopup(null,'staff')">Chat starten</button>
+        <button class="btn dan" onclick="clearStaffForm()">Löschen</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- Ich vermiete (nur Speichern/Abbrechen) -->
+  <section id="rentOffer" class="hidden">
+    <div class="card">
+      <div class="back-btn" onclick="go('home')">← Zurück</div>
+      <h2>Ich vermiete</h2>
+      <div class="row">
+        <input id="rent-title" placeholder="Titel (z. B. Minibagger)">
+      </div>
+      <div class="row row2">
+        <input id="rent-cost" placeholder="Kosten (z. B. 95 €/Tag)">
+        <select id="rent-pricetype">
+          <option value="VB">VB</option>
+          <option value="FP">FP</option>
+        </select>
+      </div>
+      <div class="row row2">
+        <input id="rent-period" placeholder="Zeitraum (z. B. KW 47)">
+        <input id="rent-range" placeholder="Umkreis (km)">
+      </div>
+      <textarea id="rent-desc" placeholder="Beschreibung"></textarea>
+      <div class="row">
+        <input id="rent-zip" placeholder="PLZ/Ort (optional für Karte)">
+      </div>
+      <div class="row">
+        <input id="rent-imgs" type="file" accept="image/*" multiple>
+        <small class="muted">Bis zu 5 Bilder. (Demo: lokal als DataURL gespeichert)</small>
+      </div>
+      <div class="actions">
+        <button class="btn pri" onclick="addRental()">Speichern</button>
+        <button class="btn sec" onclick="clearRentForm()">Abbrechen</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- Mietangebote (Liste mit Filtern + Chat/Annehmen/Blocken/Löschen) -->
+  <section id="rentals" class="hidden">
+    <div class="card">
+      <div class="back-btn" onclick="go('home')">← Zurück</div>
+      <h2>🏗 Mietangebote</h2>
+      <div class="row row3">
+        <input id="rent-filter" placeholder="Suche (Titel/Ort)">
+        <select id="rent-type-filter">
+          <option value="">Preis-Typ: Alle</option>
+          <option value="VB">VB</option>
+          <option value="FP">FP</option>
+        </select>
+        <select id="rent-status-filter">
+          <option value="">Status: Alle</option>
+          <option value="verfügbar">Verfügbar</option>
+          <option value="gebucht">Gebucht</option>
+          <option value="geblockt">Geblockt</option>
+        </select>
+      </div>
+    </div>
+    <div id="rent-list"></div>
+  </section>
+
+  <!-- Objekte (mit Filtern) -->
+  <section id="jobs" class="hidden">
+    <div class="card">
+      <div class="back-btn" onclick="go('home')">← Zurück</div>
+      <div class="row row3">
+        <input id="job-filter" placeholder="PLZ/Ort">
+        <select id="job-trade-filter"></select>
+        <select id="job-status-filter">
+          <option value="">Alle</option>
+          <option value="offen">Offen</option>
+          <option value="geblockt">Geblockt</option>
+          <option value="angenommen">Angenommen</option>
+        </select>
+      </div>
+    </div>
+    <div id="job-list"></div>
+  </section>
+
+  <!-- Mitarbeiter (mit Filtern) -->
+  <section id="staff" class="hidden">
+    <div class="card">
+      <div class="back-btn" onclick="go('home')">← Zurück</div>
+      <div class="row row3">
+        <input id="staff-filter" placeholder="PLZ/Ort">
+        <select id="staff-trade-filter"></select>
+        <select id="staff-status-filter">
+          <option value="">Alle</option>
+          <option value="verfügbar">Verfügbar</option>
+          <option value="gebucht">Gebucht</option>
+          <option value="geblockt">Geblockt</option>
+        </select>
+      </div>
+    </div>
+    <div id="staff-list"></div>
+  </section>
+
+  <!-- Karte -->
+  <section id="mapView" class="hidden">
+    <div class="card">
+      <div class="back-btn" onclick="go('home')">← Zurück</div>
+      <h2>Karte & Umgebung</h2>
+      <div class="row row3">
+        <button class="btn sec" onclick="useMyLocation()">📍 Meinen Standort verwenden</button>
+        <input id="kmFilter" placeholder="Umkreis (km, z. B. 50)" value="50">
+        <button class="btn pri" onclick="refreshMap()">Anzeigen/Filtern</button>
+      </div>
+      <div id="mapWrap"><div id="map"></div></div>
+      <small class="muted">Hinweis: PLZ werden für die Demo auf ungefähre Koordinaten abgebildet.</small>
+    </div>
+  </section>
+
+  <!-- Merkliste -->
+  <section id="favorites" class="hidden">
+    <div class="card">
+      <div class="back-btn" onclick="go('home')">← Zurück</div>
+      <h2>Merkliste</h2>
+      <div id="fav-list"></div>
+    </div>
+  </section>
+
+  <!-- Chat Popup -->
+  <div class="chat-pop" id="chatPop">
+    <div class="chat-head">
+      <div><b id="chatPopTitle">Chat</b></div>
+      <div>
+        <button class="btn sec" onclick="minimizeChat()">–</button>
+        <button class="btn dan" onclick="closeChat()">×</button>
+      </div>
+    </div>
+    <div class="chat-body" id="chatBody"></div>
+    <div class="chat-foot">
+      <input id="chatInput" placeholder="Nachricht eingeben…">
+      <button class="btn pri" onclick="sendChat()">Senden</button>
+    </div>
+  </div>
+
+  <!-- Profil -->
+  <section id="profile" class="hidden">
+    <div class="card">
+      <div class="back-btn" onclick="go('home')">← Zurück</div>
+      <h2>Profil</h2>
+      <p><b>Angemeldet als:</b> <span id="me"></span> · <b>Rolle:</b> <span id="role"></span></p>
+      <div class="actions">
+        <button class="btn sec" onclick="go('profileEdit')">Profil bearbeiten</button>
+      </div>
+    </div>
+    <div class="card">
+      <b>Rechtliches</b><br>
+      © <span id="year"></span> CraftNetWork · Lars Fleischmann, Fiemerstraße 10, 32278 Kirchlengern ·
+      <a href="javascript:openLegal('impressum')">Impressum</a> ·
+      <a href="javascript:openLegal('datenschutz')">Datenschutz</a> ·
+      <a href="javascript:openLegal('agb')">AGB</a>
+    </div>
+  </section>
+
+  <!-- Profil bearbeiten -->
+  <section id="profileEdit" class="hidden">
+    <div class="card">
+      <div class="back-btn" onclick="go('profile')">← Zurück</div>
+      <h2>Profil bearbeiten</h2>
+      <div class="row row2">
+        <input id="pr-company" placeholder="Betriebsname">
+        <input id="pr-contact" placeholder="Ansprechpartner">
+      </div>
+      <div class="row row2">
+        <input id="pr-zipcity" placeholder="PLZ / Ort">
+        <input id="pr-phone" placeholder="Telefon">
+      </div>
+      <div class="row row2">
+        <select id="pr-trade"></select>
+        <input id="pr-email" placeholder="E-Mail">
+      </div>
+      <textarea id="pr-notes" placeholder="Über uns / Kurzbeschreibung …"></textarea>
+      <input id="pr-specs" placeholder="Spezialisierungen (Kommagetrennt)">
+      <div class="row row2">
+        <input id="pr-lat" placeholder="Breite (optional)">
+        <input id="pr-lng" placeholder="Länge (optional)">
+      </div>
+      <div class="row row2">
+        <input id="pr-stars" type="number" min="1" max="5" placeholder="⭐ Bewertung 1–5">
+        <input id="pr-logo" type="file" accept="image/*" onchange="uploadLogo(event)">
+      </div>
+      <img id="pr-logo-preview" style="max-width:160px;max-height:160px;display:none;border-radius:12px;margin-top:8px" alt="Logo Vorschau">
+      <div class="actions">
+        <button class="btn pri" onclick="saveProfile()">Speichern</button>
+        <button class="btn sec" onclick="loadProfile()">Laden</button>
+      </div>
+    </div>
+  </section>
+</main>
+
+<!-- Bottom Tabs -->
+<nav class="tabs hidden" id="tabs">
+  <button id="tab-home" class="active" onclick="go('home')">Home</button>
+  <button id="tab-jobs" onclick="go('jobs')">Objekte</button>
+  <button id="tab-staff" onclick="go('staff')">Mitarbeiter</button>
+  <button id="tab-rentals" onclick="go('rentals')">🏗 Mietangebote</button>
+  <button id="tab-profile" onclick="go('profile')">Profil</button>
+</nav>
+
+<!-- Overlay / Legal -->
+<div class="overlay" id="overlay" onclick="closeLegal()"><div class="sheet" id="sheet" onclick="event.stopPropagation()"></div></div>
+
+<!-- Toasts -->
+<div class="toasts" id="toasts"></div>
+
+<script>
+/* ===== Helpers / Globals ===== */
+const $=id=>document.getElementById(id);
+const now=()=>new Date().toLocaleString();
+const DAY_MS=86400000, TTL_MS=30*DAY_MS;
+function toast(txt){ const t=document.createElement('div'); t.className='toast'; t.innerHTML=txt; $("toasts").appendChild(t); setTimeout(()=>t.remove(),4200); }
+
+let currentUser=null, jobs=[], staff=[], rentals=[], favorites = JSON.parse(localStorage.getItem("cnw_favs")||"[]");
+const ADMIN={user:"admin@cnw.de", pass:"Admin#2024!", role:"admin"};
+const DEMOS=Array.from({length:30},(_,i)=>({user:`demo-user${String(i+1).padStart(2,'0')}`, pass:`demo${String(31-(i+1)).padStart(2,'0')}#`, role:"user"}));
+
+/* ===== Gewerke (alphabetisch) ===== */
+const TRADES = [
+  "Abbruch","Akustikbau","Allrounder","Bautrocknung","Bodenleger","Brandschutz","Dachdecker",
+  "Elektriker","Estrichleger","Fensterbauer","Fliesenleger","GaLa-Bauer","Gerüstbauer",
+  "Heizung/Sanitär","Holzbau","Innenausbau","Isolierer","Kälte/Klima","Lackierer",
+  "Maler","Maurer","Metallbau","Sanierer","Schreiner/Tischler","Solaranlagen",
+  "Spengler","Trockenbauer","Zimmerer"
+].sort((a,b)=>a.localeCompare(b,'de'));
+function fillTradeSelect(id){ const el=$(id); if(!el) return; el.innerHTML=`<option value="">Gewerk wählen …</option>`+TRADES.map(t=>`<option>${t}</option>`).join(''); }
+
+/* ===== Hintergrund (Slideshow) ===== */
+const SLIDE_MS=10000, LOCAL_KEY="cnwBgImagesV1";
+const localFiles=["Bild1.jpg","Bild2.jpg","Bild3.jpg","Bild4.jpg","Bild5.jpg","Bild6.jpg","Bild7.jpg"];
+function setupBackgroundFromSources(sources){
+  const bg=$("bg"); bg.innerHTML="";
+  sources.forEach((src,idx)=>{ const im=new Image(); im.src=src; if(idx===0) im.classList.add("active"); bg.appendChild(im); });
+  const imgs=bg.querySelectorAll("img"); if(!imgs.length) return; let i=0;
+  setInterval(()=>{ imgs[i].classList.remove("active"); i=(i+1)%imgs.length; imgs[i].classList.add("active"); }, SLIDE_MS);
+}
+function tryLocalFilenames(){
+  Promise.all(localFiles.map(src=> new Promise(res=>{ const im=new Image(); im.onload=()=>res(src); im.onerror=()=>res(null); im.src=src; })))
+    .then(arr=>{
+      const ok=arr.filter(Boolean);
+      if(ok.length){ setupBackgroundFromSources(ok); }
+      else{
+        const saved = JSON.parse(localStorage.getItem(LOCAL_KEY)||"[]");
+        if(saved.length){ setupBackgroundFromSources(saved); }
+        else{ $("bgHint").style.display="flex"; }
+      }
+    });
+}
+function fileToDataUrl(file){ return new Promise(res=>{ const fr=new FileReader(); fr.onload=()=>res(fr.result); fr.readAsDataURL(file); }); }
+function resizeDataUrl(dataUrl,maxW=1600,maxH=1200,q=.82){
+  return new Promise(res=>{ const im=new Image(); im.onload=()=>{
+    const r=Math.min(maxW/im.width,maxH/im.height,1), w=Math.round(im.width*r), h=Math.round(im.height*r);
+    const c=document.createElement("canvas"); c.width=w; c.height=h; c.getContext("2d").drawImage(im,0,0,w,h);
+    res(c.toDataURL("image/jpeg",q));
+  }; im.src=dataUrl; });
+}
+async function handlePicker(files){
+  if(!files?.length) return;
+  const chosen=[...files].slice(0,12);
+  const data=await Promise.all(chosen.map(fileToDataUrl));
+  const shrunk=await Promise.all(data.map(d=>resizeDataUrl(d)));
+  localStorage.setItem(LOCAL_KEY, JSON.stringify(shrunk));
+  setupBackgroundFromSources(shrunk);
+  $("bgHint").style.display="none";
+}
+
+/* ===== UI: Tabs, Drawer, Glocke ===== */
+function go(id){
+  document.querySelectorAll("main section").forEach(s=>s.classList.add("hidden"));
+  $(id).classList.remove("hidden");
+  document.querySelectorAll("nav.tabs button").forEach(b=>b.classList.remove("active"));
+  const t=$("tab-"+id); if(t) t.classList.add("active");
+  if(id==="jobs") renderJobs(); if(id==="staff") renderStaff(); if(id==="profile") refreshProfile(); if(id==="rentals") renderRentals();
+}
+document.addEventListener("DOMContentLoaded",()=>{
+  $("burgerBtn").addEventListener("click", ()=>{
+    const d=$("drawer"); d.style.display = d.style.display==="block"?"none":"block";
+  });
+  $("bellBtn").addEventListener("click", ()=>{
+    const n=$("notifBox"); n.classList.toggle("open");
+    const p=$("notifPanel"); p.style.display = p.style.display==="block"?"none":"block";
+    $("bellDot").style.display="none"; $("bellDot").textContent="0";
+  });
+});
+
+/* ===== Login ===== */
+function doLogin(){
+  const u=$("li-user").value.trim(), p=$("li-pass").value.trim(), ust=($("li-ust").value||"").trim().toUpperCase();
+  if(!/^DE[0-9]{9}$/i.test(ust)){ alert("Bitte gültige USt-IdNr. (DE#########) eingeben."); return; }
+  if(u===ADMIN.user && p===ADMIN.pass){ currentUser={u, role:"admin"}; }
+  if(!currentUser){
+    const f=DEMOS.find(d=>d.user===u && d.pass===p);
+    if(f) currentUser={u:f.user, role:f.role};
+  }
+  if(!currentUser){ alert("Login fehlgeschlagen."); return; }
+  localStorage.setItem("cnw_user", JSON.stringify(currentUser));
+  initAfterLogin();
+}
+function logout(){ localStorage.removeItem("cnw_user"); location.reload(); }
+
+/* ===== Stats & Favoriten ===== */
+function renderStats(){
+  $("stOpen").innerText = jobs.filter(j=>j.status==="offen").length;
+  $("stBlocked").innerText = jobs.filter(j=>j.status==="geblockt").length;
+  $("stAvail").innerText = staff.filter(s=>s.status==="verfügbar").length;
+  $("stBooked").innerText = staff.filter(s=>s.status==="gebucht").length;
+}
+function isFav(key){ return favorites.includes(key); }
+function toggleFav(key){
+  const i=favorites.indexOf(key);
+  if(i>=0) favorites.splice(i,1); else favorites.push(key);
+  localStorage.setItem("cnw_favs", JSON.stringify(favorites));
+  renderJobs(); renderStaff(); renderFavs(); renderRentals();
+}
+function favStar(key){ return `<span class="star" title="merken" onclick="toggleFav('${key}')">${isFav(key)?'⭐':'☆'}</span>`; }
+
+/* ===== Karten-Helfer ===== */
+function pseudoCoord(zipText){
+  const d=(zipText||"").replace(/\D/g,""); const n=parseInt(d||"0",10);
+  const lat = 50.5 + ((n%3000)/3000)*3;
+  const lng = 6 + ((n%7500)/7500)*7.5;
+  return {lat,lng};
+}
+let map, markersLayer, myPos=null;
+function haversine(lat1,lon1,lat2,lon2){
+  const R=6371, toRad=x=>x*Math.PI/180;
+  const dLat=toRad(lat2-lat1), dLon=toRad(lon2-lon1);
+  const a=Math.sin(dLat/2)**2 + Math.cos(toRad(lat1))*Math.cos(toRad(lat2))*Math.sin(dLon/2)**2;
+  return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
+}
+function useMyLocation(){
+  if(navigator.geolocation){
+    navigator.geolocation.getCurrentPosition(pos=>{
+      myPos={lat:pos.coords.latitude,lng:pos.coords.longitude};
+      toast("📍 Standort gesetzt");
+      refreshMap();
+    }, ()=>{ toast("⚠️ Standort abgelehnt"); });
+  }else toast("⚠️ Standort nicht verfügbar");
+}
+function ensureMap(){
+  if(map) return;
+  map = L.map('map').setView([51.3,10.2],6);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {maxZoom:19, attribution:'© OpenStreetMap'}).addTo(map);
+  markersLayer = L.layerGroup().addTo(map);
+}
+function refreshMap(){
+  ensureMap();
+  markersLayer.clearLayers();
+  const km = parseFloat($("kmFilter").value||"0")||0;
+  const addMarker=(lat,lng,label,color)=>{
+    const m=L.circleMarker([lat,lng],{radius:8,weight:2,color:color,fillColor:color,fillOpacity:.7});
+    m.bindPopup(label); markersLayer.addLayer(m);
+  };
+  if(myPos){ addMarker(myPos.lat,myPos.lng,"Mein Standort","#1976d2"); map.setView([myPos.lat,myPos.lng], km?9:6); }
+  jobs.forEach(j=>{
+    const lat=j.lat??pseudoCoord(j.zip).lat, lng=j.lng??pseudoCoord(j.zip).lng;
+    if(myPos && km>0){ const dist=haversine(myPos.lat,myPos.lng,lat,lng); if(dist>km) return; }
+    addMarker(lat,lng,`🧱 ${j.title} (${j.zip}) – ${j.status}` , j.status==="geblockt"?"#616161": j.status==="angenommen"?"#2e7d32":"#F07A21");
+  });
+  staff.forEach(s=>{
+    const lat=s.lat??pseudoCoord(s.zip).lat, lng=s.lng??pseudoCoord(s.zip).lng;
+    if(myPos && km>0){ const dist=haversine(myPos.lat,myPos.lng,lat,lng); if(dist>km) return; }
+    addMarker(lat,lng,`👷 ${s.trade} x${s.count} (${s.zip}) – ${s.status}` , s.status==="geblockt"?"#616161": s.status==="gebucht"?"#2e7d32":"#F07A21");
+  });
+  rentals.forEach(r=>{
+    const lat=r.lat??pseudoCoord(r.zip||"").lat, lng=r.lng??pseudoCoord(r.zip||"").lng;
+    if(myPos && km>0){ const dist=haversine(myPos.lat,myPos.lng,lat,lng); if(dist>km) return; }
+    addMarker(lat,lng,`🧰 ${r.title} (${r.zip||"-"}) – ${r.status||"verfügbar"}`, r.status==="geblockt"?"#616161": r.status==="gebucht"?"#2e7d32":"#F07A21");
+  });
+}
+
+/* ===== Render Cards ===== */
+function jobCard(j){
+  const key=`job_${j.id}`;
+  return `<div class="card">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
+      <div><b>${j.title}</b> – ${j.trade||"-"} (${j.zip})</div>
+      ${favStar(key)}
+    </div>
+    <div class="muted">${j.desc||""}</div>
+    <small>Preis: ${j.price||"n. V."} · Zeitraum: ${j.period||"n. V."} · Größe: ${j.size||"-"} · Material: ${j.material||"-"} · Status: <b>${j.status}</b></small><br>
+    <div class="actions">
+      <button class="btn sec" onclick="openChatPopup(${j.id},'job')">Chat</button>
+      <button class="btn pri" onclick="acceptJob(${j.id})">Annehmen</button>
+      <button class="btn sec" onclick="toggleBlockJob(${j.id})">${j.status==='geblockt'?'Entblocken':'Blocken'}</button>
+      <button class="btn dan" onclick="deleteJob(${j.id})">Löschen</button>
+    </div></div>`;
+}
+function staffCard(s){
+  const key=`staff_${s.id}`;
+  return `<div class="card">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
+      <div><b>${s.trade}</b> – ${s.count} Pers. · ${s.qual||"-"} (${s.zip})</div>
+      ${favStar(key)}
+    </div>
+    <small>Zeitraum: ${s.period||"n. V."} · Umkreis: ${s.range||"-"} km · Satz: ${s.rate||"n. V."} · Status: <b>${s.status}</b></small><br>
+    <div class="actions">
+      <button class="btn sec" onclick="openChatPopup(${s.id},'staff')">Chat</button>
+      <button class="btn pri" onclick="acceptStaff(${s.id})">Annehmen</button>
+      <button class="btn sec" onclick="toggleBlockStaff(${s.id})">${s.status==='geblockt'?'Entblocken':'Blocken'}</button>
+      <button class="btn dan" onclick="deleteStaff(${s.id})">Löschen</button>
+    </div></div>`;
+}
+
+/* ===== Rentals (Karten + UI) ===== */
+function rentalCard(r){
+  const key=`rent_${r.id}`;
+  const thumbs = (r.imgs||[]).slice(0,3).map(u=>`<img src="${u}" style="height:56px;border-radius:8px;margin-right:6px">`).join("");
+  return `<div class="card">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
+      <div><b>${r.title}</b> – ${r.zip||"-"} · ${r.cost||"-"} (${r.pricetype||"VB"})</div>
+      ${favStar(key)}
+    </div>
+    ${thumbs?`<div style="margin:6px 0">${thumbs}</div>`:""}
+    <small>Zeitraum: ${r.period||"n. V."} · Umkreis: ${r.range||"-"} km · Status: <b>${r.status||"verfügbar"}</b></small><br>
+    <div class="muted">${r.desc||""}</div>
+    <div class="actions">
+      <button class="btn sec" onclick="openChatPopup(${r.id},'rental')">Chat</button>
+      <button class="btn pri" onclick="acceptRental(${r.id})">Annehmen</button>
+      <button class="btn sec" onclick="toggleBlockRental(${r.id})">${r.status==='geblockt'?'Entblocken':'Blocken'}</button>
+      <button class="btn dan" onclick="deleteRental(${r.id})">Löschen</button>
+    </div></div>`;
+}
+function renderRentals(){
+  const f=($("rent-filter").value||"").toLowerCase();
+  const t=$("rent-type-filter").value, st=$("rent-status-filter").value;
+  const box=$("rent-list"); box.innerHTML="";
+  rentals
+    .filter(r=>!t||r.pricetype===t)
+    .filter(r=>!st||(r.status||"verfügbar")===st)
+    .filter(r=>(r.title+r.zip).toLowerCase().includes(f))
+    .forEach(r=> box.insertAdjacentHTML('beforeend', rentalCard(r)));
+}
+
+/* ===== CRUD / Aktionen ===== */
+function addJob(){
+  const t=$("job-title").value.trim(), tr=$("job-trade").value.trim(), z=$("job-zip").value.trim();
+  const d=$("job-desc").value.trim(), pr=$("job-price").value.trim(), pe=$("job-period").value.trim(), sz=$("job-size").value.trim();
+  const mat=$("job-material").value, st=$("job-status").value;
+  if(!t||!tr||!z){ alert("Titel, Gewerk, PLZ/Ort sind Pflicht."); return; }
+  const obj={id:Date.now(), title:t, trade:tr, zip:z, desc:d, price:pr, period:pe, size:sz, material:mat, status:st, owner:currentUser?.u||"unknown", timestamp:Date.now()};
+  const pp = pseudoCoord(z); obj.lat=pp.lat; obj.lng=pp.lng;
+  FB.addJob(obj); clearJobForm(); go('jobs');
+}
+function clearJobForm(){ ["job-title","job-trade","job-zip","job-desc","job-price","job-period","job-size"].forEach(id=>$(id).value=""); }
+function addStaff(){
+  const tr=$("staff-trade").value.trim(), ct=$("staff-count").value.trim(), z=$("staff-zip").value.trim();
+  const q=$("staff-qual").value.trim(), pe=$("staff-period").value.trim(), rg=$("staff-range").value.trim(), rt=$("staff-rate").value.trim(), st=$("staff-status").value;
+  if(!tr||!ct||!z){ alert("Gewerk, Anzahl, PLZ/Ort sind Pflicht."); return; }
+  const it={id:Date.now(), trade:tr, count:+ct, zip:z, qual:q, period:pe, range:rg, rate:rt, status:st, owner:currentUser?.u||"unknown", timestamp:Date.now()};
+  const pp = pseudoCoord(z); it.lat=pp.lat; it.lng=pp.lng;
+  FB.addStaff(it); clearStaffForm(); go('staff');
+}
+function clearStaffForm(){ ["staff-trade","staff-count","staff-zip","staff-qual","staff-period","staff-range","staff-rate"].forEach(id=>$(id).value=""); }
+
+function deleteJob(id){ FB.removeJob(id); }
+function deleteStaff(id){ FB.removeStaff(id); }
+
+function acceptJob(id){
+  const j=jobs.find(x=>x.id===id); if(!j) return;
+  j.status="angenommen"; FB.updateJob(j);
+  FB.notify(j.owner, `✅ Dein Auftrag „${j.title}” wurde von ${currentUser.u} angenommen.`, `job_${j.id}`);
+}
+function acceptStaff(id){
+  const s=staff.find(x=>x.id===id); if(!s) return;
+  s.status="gebucht"; FB.updateStaff(s);
+  FB.notify(s.owner, `✅ Dein Mitarbeiter-Angebot „${s.trade}” wurde von ${currentUser.u} gebucht.`, `staff_${s.id}`);
+}
+function toggleBlockJob(id){
+  const j=jobs.find(x=>x.id===id); if(!j) return;
+  j.status = j.status==="geblockt" ? "offen" : "geblockt"; FB.updateJob(j);
+  FB.notify(j.owner, `⚠️ Status deines Auftrags „${j.title}” ist jetzt: ${j.status}.`, `job_${j.id}`);
+}
+function toggleBlockStaff(id){
+  const s=staff.find(x=>x.id===id); if(!s) return;
+  s.status = s.status==="geblockt" ? "verfügbar" : "geblockt"; FB.updateStaff(s);
+  FB.notify(s.owner, `⚠️ Status deines Mitarbeiter-Angebots „${s.trade}” ist jetzt: ${s.status}.`, `staff_${s.id}`);
+}
+
+/* ===== Rentals: CRUD ===== */
+let rentImgsData=[];
+$("rent-imgs")?.addEventListener?.("change", async (e)=>{
+  const files=[...e.target.files].slice(0,5);
+  const datas=await Promise.all(files.map(fileToDataUrl));
+  // etwas verkleinern
+  rentImgsData = await Promise.all(datas.map(d=>resizeDataUrl(d,1400,1000,.85)));
+});
+function addRental(){
+  const title=$("rent-title").value.trim();
+  const cost=$("rent-cost").value.trim();
+  const pricetype=$("rent-pricetype").value;
+  const desc=$("rent-desc").value.trim();
+  const period=$("rent-period").value.trim();
+  const range=$("rent-range").value.trim();
+  const zip=($("rent-zip").value||"").trim();
+  if(!title){ alert("Titel ist Pflicht."); return; }
+  const it={ id:Date.now(), title, cost, pricetype, desc, period, range, zip,
+    imgs: rentImgsData||[], status:"verfügbar", owner:currentUser?.u||"unknown", timestamp:Date.now() };
+  const pp = pseudoCoord(zip||""); it.lat=pp.lat; it.lng=pp.lng;
+  FB.addRental(it);
+  clearRentForm();
+  go('rentals');
+}
+function clearRentForm(){
+  ["rent-title","rent-cost","rent-period","rent-range","rent-desc","rent-zip"].forEach(id=>$(id).value="");
+  $("rent-pricetype").value="VB";
+  $("rent-imgs").value="";
+  rentImgsData=[];
+}
+function deleteRental(id){ FB.removeRental(id); }
+function acceptRental(id){
+  const r=rentals.find(x=>x.id===id); if(!r) return;
+  r.status="gebucht"; FB.updateRental(r);
+  FB.notify(r.owner, `✅ Dein Mietangebot „${r.title}” wurde von ${currentUser.u} gebucht.`, `rental_${r.id}`);
+}
+function toggleBlockRental(id){
+  const r=rentals.find(x=>x.id===id); if(!r) return;
+  r.status = r.status==="geblockt" ? "verfügbar" : "geblockt"; FB.updateRental(r);
+  FB.notify(r.owner, `⚠️ Status deines Mietangebots „${r.title}” ist jetzt: ${r.status}.`, `rental_${r.id}`);
+}
+
+/* ===== Chat ===== */
+let currentChat=null;
+function openChatPopup(id,type){
+  currentChat = id ? {id,type} : {id:null,type};
+  $("chatPop").style.display="flex";
+  let title="Chat";
+  if(id){
+    if(type==='job'){ title = jobs.find(x=>x.id===id)?.title||"Chat"; }
+    else if(type==='staff'){ title = staff.find(x=>x.id===id)?.trade||"Chat"; }
+    else if(type==='rental'){ title = rentals.find(x=>x.id===id)?.title||"Chat"; }
+  }
+  $("chatPopTitle").textContent = title;
+  $("chatBody").innerHTML="";
+  if(id && FB.enabled){ FB.listenChat(type,id, renderChatBody); }
+}
+function renderChatBody(msgs){
+  $("chatBody").innerHTML = (msgs||[]).map(m=>`
+    <div class="chat-msg ${m.from===currentUser.u?'self':''}">
+      <b>${m.from}</b> <span style="color:#777;font-size:.85em">${new Date(m.time).toLocaleString()}</span><br>${m.text}
+    </div>`).join("") || `<div class="chat-msg">Noch keine Nachrichten.</div>`;
+  $("chatBody").scrollTop = $("chatBody").scrollHeight;
+}
+function minimizeChat(){ $("chatPop").style.display="none"; }
+function closeChat(){ $("chatPop").style.display="none"; currentChat=null; }
+function sendChat(){
+  const txt=$("chatInput").value.trim(); if(!txt) return;
+  if(currentChat?.id && FB.enabled){
+    const entry={from: currentUser?.u || "User", text:txt, time: Date.now()};
+    $("chatInput").value="";
+    FB.pushChat(currentChat.type, currentChat.id, entry);
+    let obj=null;
+    if(currentChat.type==='job') obj=jobs.find(x=>x.id===currentChat.id);
+    else if(currentChat.type==='staff') obj=staff.find(x=>x.id===currentChat.id);
+    else if(currentChat.type==='rental') obj=rentals.find(x=>x.id===currentChat.id);
+    if(obj?.owner && obj.owner!==currentUser.u){
+      FB.notify(obj.owner, `💬 Neue Nachricht von ${entry.from} zu „${obj.title||obj.trade}“`, `${currentChat.type}_${currentChat.id}`);
+    }
+  }
+}
+
+/* ===== Merkliste ===== */
+function renderFavs(){
+  const box=$("fav-list"); if(!box) return; box.innerHTML="";
+  const map = new Map();
+  jobs.forEach(j=>map.set(`job_${j.id}`, jobCard(j)));
+  staff.forEach(s=>map.set(`staff_${s.id}`, staffCard(s)));
+  rentals.forEach(r=>map.set(`rent_${r.id}`, rentalCard(r)));
+  favorites.forEach(k=>{ if(map.has(k)) box.insertAdjacentHTML('beforeend', map.get(k)); });
+}
+
+/* ===== Profil ===== */
+let uploadedLogoDataUrl=null;
+async function uploadLogo(ev){
+  const f=ev.target.files?.[0]; if(!f) return;
+  const data=await fileToDataUrl(f); uploadedLogoDataUrl=data;
+  $("pr-logo-preview").src=data; $("pr-logo-preview").style.display="block";
+}
+function saveProfile(){
+  if(!currentUser) return;
+  const profile={
+    company:$("pr-company").value.trim(),
+    contact:$("pr-contact").value.trim(),
+    zipcity:$("pr-zipcity").value.trim(),
+    phone:$("pr-phone").value.trim(),
+    trade:$("pr-trade").value,
+    email:$("pr-email").value.trim(),
+    notes:$("pr-notes").value.trim(),
+    specs:$("pr-specs").value.trim(),
+    lat:parseFloat($("pr-lat").value)||null,
+    lng:parseFloat($("pr-lng").value)||null,
+    stars:Math.max(1, Math.min(5, parseInt($("pr-stars").value||"0")))||3,
+    logo:uploadedLogoDataUrl||null,
+    updated:Date.now()
+  };
+  FB.saveProfile(currentUser.u, profile);
+  toast("💾 Profil gespeichert");
+}
+function loadProfile(){
+  if(!currentUser) return;
+  FB.loadProfile(currentUser.u, (p)=>{
+    $("pr-company").value=p?.company||""; $("pr-contact").value=p?.contact||"";
+    $("pr-zipcity").value=p?.zipcity||""; $("pr-phone").value=p?.phone||"";
+    $("pr-trade").value=p?.trade||""; $("pr-email").value=p?.email||"";
+    $("pr-notes").value=p?.notes||""; $("pr-specs").value=p?.specs||"";
+    $("pr-lat").value=p?.lat??""; $("pr-lng").value=p?.lng??"";
+    $("pr-stars").value=p?.stars??"";
+    uploadedLogoDataUrl=p?.logo||null;
+    if(uploadedLogoDataUrl){ $("pr-logo-preview").src=uploadedLogoDataUrl; $("pr-logo-preview").style.display="block"; }
+  });
+}
+function refreshProfile(){ $("me").innerText=currentUser?.u||"-"; $("role").innerText=currentUser?.role||"-"; loadProfile(); }
+
+/* ===== Notifs (Glocke) ===== */
+let notifBuffer=[];
+function addNotifItem(text,ref){
+  notifBuffer.unshift({text,ref,time:Date.now()}); notifBuffer=notifBuffer.slice(0,10);
+  renderNotifList();
+  $("bellDot").style.display="inline-block";
+  const c=+($("bellDot").textContent||"0")+1; $("bellDot").textContent=String(c);
+}
+function renderNotifList(){
+  const box=$("notifList"); box.innerHTML="";
+  if(!notifBuffer.length){ box.innerHTML='<div class="muted">Keine neuen Nachrichten.</div>'; return; }
+  notifBuffer.forEach(n=>{
+    const div=document.createElement("div"); div.className="item";
+    div.innerHTML=`<b style="cursor:pointer">${n.text}</b><br><small class="muted">${new Date(n.time).toLocaleString()}</small>`;
+    div.querySelector('b').onclick=()=>{ if(n.ref) openFromNotif(n.ref); $("notifPanel").style.display="none"; };
+    box.appendChild(div);
+  });
+}
+
+/* ===== Rechtliches ===== */
+function openLegal(which){
+  const html = which==="impressum" ? `
+    <h3>Impressum</h3>
+    <p><b>Lars Fleischmann</b><br>Fiemerstraße 10<br>32278 Kirchlengern</p>
+    <p>Diese Seite ist eine Demo-Plattform ohne Gewähr.</p>`
+  : which==="agb" ? `
+    <h3>AGB (Demo)</h3>
+    <p>Unverbindliche Demo-AGB. Keine echten Vertragsbedingungen.</p>`
+  : `
+    <h3>Datenschutz (Demo)</h3>
+    <p>Diese Demo speichert Daten in der Firebase Realtime Database. Keine Garantie auf Verfügbarkeit. Daten älter als 30 Tage werden automatisch bereinigt.</p>`;
+  $("sheet").innerHTML = html + `<div style="text-align:right;margin-top:10px"><button class="btn pri" onclick="closeLegal()">Schließen</button></div>`;
+  $("overlay").style.display="flex";
+}
+function closeLegal(){ $("overlay").style.display="none"; }
+
+/* ===== Firebase Wrapper ===== */
+const FB = {
+  enabled:false, db:null, chatRef:null, notifRef:null,
+  start(){
+    try{
+      const firebaseConfig = {
+        apiKey: "AIzaSyDA9w9AQtaXshmX-TNa6jIBlntWn5uz8xU",
+        authDomain: "craftnetwork-demo.firebaseapp.com",
+        databaseURL: "https://craftnetwork-demo-default-rtdb.europe-west1.firebasedatabase.app",
+        projectId: "craftnetwork-demo",
+        storageBucket: "craftnetwork-demo.appspot.com",
+        messagingSenderId: "899972042271",
+        appId: "1:899972042271:web:d7ea669e24ae8cd6dd8f2a"
+      };
+      firebase.initializeApp(firebaseConfig);
+      this.db = firebase.database();
+      this.enabled = true;
+      this.cleanupOld();
+      console.log("✅ Firebase verbunden");
+    }catch(e){
+      console.warn("⚠️ Firebase Init fehlgeschlagen:", e);
+      this.enabled = false;
+    }
+  },
+  startListeners(){
+    if(!this.enabled) return;
+    this.db.ref("cnw/jobs").on("value", snap=>{
+      const v=snap.val()||{}; jobs = Object.values(v).sort((a,b)=>b.id-a.id);
+      renderJobs(); renderStats(); if(document.getElementById('map')) refreshMap();
+    });
+    this.db.ref("cnw/staff").on("value", snap=>{
+      const v=snap.val()||{}; staff = Object.values(v).sort((a,b)=>b.id-a.id);
+      renderStaff(); renderStats(); if(document.getElementById('map')) refreshMap();
+    });
+    this.db.ref("cnw/rentals").on("value", snap=>{
+      const v=snap.val()||{}; rentals = Object.values(v).sort((a,b)=>b.id-a.id);
+      renderRentals(); if(document.getElementById('map')) refreshMap();
+      // Seed Beispiele, falls leer
+      if(Object.keys(v).length===0){
+        const demo1={id:Date.now(), title:"Anhänger (Kipp, 2,5t)", cost:"35 €/Tag", pricetype:"FP", desc:"Stabiler Kippanhänger, Zurrösen, Rampen.", period:"ab sofort", range:"50", zip:"33602", imgs:[], status:"verfügbar", owner:"admin@cnw.de", timestamp:Date.now()};
+        const demo2={id:Date.now()+1, title:"Minibagger 1,8t", cost:"95 €/Tag", pricetype:"VB", desc:"inkl. 30/60er Löffel, Schnellwechsler.", period:"KW 47–49", range:"80", zip:"44135", imgs:[], status:"verfügbar", owner:"admin@cnw.de", timestamp:Date.now()+1};
+        this.addRental(demo1); this.addRental(demo2);
+      }
+    });
+  },
+  listenChat(type,id, cb){
+    if(!this.enabled) return;
+    const path=`cnw/chats/${type}_${id}/messages`;
+    if(this.chatRef){ this.chatRef.off(); }
+    this.chatRef=this.db.ref(path);
+    this.chatRef.on("value", snap=> cb(Object.values(snap.val()||{})) );
+  },
+  startNotifListener(){
+    if(!this.enabled || !currentUser) return;
+    const path = `cnw/notifications/${sanitizeKey(currentUser.u)}`;
+    if(this.notifRef) this.notifRef.off();
+    this.notifRef = this.db.ref(path);
+    this.notifRef.on("child_added", snap=>{
+      const n=snap.val();
+      if(n?.text){
+        addNotifItem(n.text, n.chatRef||"");
+        toast(`<b style="cursor:pointer" onclick="openFromNotif('${n.chatRef||''}')">${n.text}</b>`);
+      }
+      this.db.ref(path).child(snap.key).remove();
+    });
+  },
+  openChatFromRef(ref){ if(!ref) return; const [type,id]=ref.split("_"); openChatPopup(+id,type); },
+
+  addJob(obj){ this.db.ref("cnw/jobs/"+obj.id).set(obj); },
+  addStaff(obj){ this.db.ref("cnw/staff/"+obj.id).set(obj); },
+  addRental(obj){ this.db.ref("cnw/rentals/"+obj.id).set(obj); },
+
+  removeJob(id){ this.db.ref("cnw/jobs/"+id).remove(); },
+  removeStaff(id){ this.db.ref("cnw/staff/"+id).remove(); },
+  removeRental(id){ this.db.ref("cnw/rentals/"+id).remove(); },
+
+  updateJob(obj){ this.db.ref("cnw/jobs/"+obj.id).set(obj); },
+  updateStaff(obj){ this.db.ref("cnw/staff/"+obj.id).set(obj); },
+  updateRental(obj){ this.db.ref("cnw/rentals/"+obj.id).set(obj); },
+
+  pushChat(type,id, entry){
+    const ref=this.db.ref(`cnw/chats/${type}_${id}/messages`).push();
+    ref.set(entry);
+  },
+  notify(user, text, chatRef){
+    if(!user) return;
+    const path=`cnw/notifications/${sanitizeKey(user)}`;
+    const ref=this.db.ref(path).push();
+    ref.set({text, chatRef:chatRef||"", time:Date.now()});
+  },
+
+  saveProfile(username,data){ this.db.ref("cnw/profiles/"+sanitizeKey(username)).set(data); },
+  loadProfile(username,cb){
+    this.db.ref("cnw/profiles/"+sanitizeKey(username)).once("value").then(s=>cb(s.val()||null));
+  },
+
+  cleanupOld(){
+    const cutoff = Date.now() - TTL_MS;
+    const clean = (path) => {
+      this.db.ref(path).once("value").then(snap=>{
+        const v=snap.val()||{};
+        Object.keys(v).forEach(k=>{
+          const it=v[k]; if(it?.timestamp && it.timestamp < cutoff){ this.db.ref(path+"/"+k).remove(); }
+        });
+      });
+    };
+    clean("cnw/jobs"); clean("cnw/staff"); clean("cnw/rentals");
+    this.db.ref("cnw/chats").once("value").then(snap=>{
+      const threads=snap.val()||{};
+      Object.keys(threads).forEach(key=>{
+        const msgs=threads[key]?.messages||{};
+        Object.keys(msgs).forEach(mk=>{ if(msgs[mk]?.time && msgs[mk].time < cutoff){ this.db.ref(`cnw/chats/${key}/messages/${mk}`).remove(); } });
+      });
+    });
+  }
+};
+function sanitizeKey(k){ return (k||"").replace(/[.#$\[\]]/g,"_"); }
+function openFromNotif(ref){ FB.openChatFromRef(ref); }
+
+/* ===== Init ===== */
+function initAfterLogin(){
+  $("login").classList.add("hidden");
+  $("siteHeader").classList.remove("hidden");
+  $("app").classList.remove("hidden");
+  $("tabs").classList.remove("hidden");
+  $("topbar").classList.remove("hidden");
+  fillTradeSelect("job-trade"); fillTradeSelect("staff-trade"); fillTradeSelect("pr-trade");
+  fillTradeSelect("job-trade-filter"); fillTradeSelect("staff-trade-filter");
+  refreshProfile(); go('home'); renderJobs(); renderStaff(); renderStats(); renderRentals();
+  if(FB.enabled){ FB.startListeners(); FB.startNotifListener(); }
+}
+document.addEventListener("DOMContentLoaded", ()=>{
+  tryLocalFilenames();
+  $("pickBtn").addEventListener("click", ()=> $("bgPicker").click());
+  $("bgPicker").addEventListener("change", e=> handlePicker(e.target.files));
+  FB.start();
+  const u=localStorage.getItem("cnw_user");
+  if(u){ currentUser=JSON.parse(u); initAfterLogin(); }
+  $("year").textContent = new Date().getFullYear();
+
+  // Filter Listener
+  ["job-filter","job-trade-filter","job-status-filter"].forEach(id=> $(id).addEventListener("input", renderJobs));
+  ["staff-filter","staff-trade-filter","staff-status-filter"].forEach(id=> $(id).addEventListener("input", renderStaff));
+  ["rent-filter","rent-type-filter","rent-status-filter"].forEach(id=> $(id)?.addEventListener("input", renderRentals));
+});
+</script>
+
+</body>
+</html>
